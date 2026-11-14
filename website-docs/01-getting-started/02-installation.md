@@ -65,6 +65,20 @@ docker compose ps                 # 等所有服务变成 healthy/running
 
 启动后在浏览器打开 `http://localhost` 就是前端（端口由 `FRONTEND_PORT` 决定，默认 80），首次访问会落到注册页。前端 Nginx 把 `/api/` 反代到后端，所以接口调用同样走 `http://localhost/api/v1`；后端 `8080` 端口也直接映射到宿主机，`curl http://localhost:8080/health` 可用于确认后端就绪。
 
+前端镜像支持在容器启动时选择路径前缀，无需重新构建镜像。设置
+`FRONTEND_BASE_PATH=/weknora` 后，页面、静态资源、API、文件、MCP、嵌入页和
+WebSocket 都从 `/weknora/` 提供；不设置或设为 `/` 时保持根路径部署。Compose
+可在 `.env` 中设置该变量；单独启动前端镜像时示例如下：
+
+```bash
+docker run -d --name weknora-ui --restart unless-stopped \
+  --network weknora-network -p 18080:80 \
+  -e FRONTEND_BASE_PATH=/weknora \
+  -e APP_HOST=weknora-app -e APP_PORT=8080 -e APP_SCHEME=http \
+  -e MAX_FILE_SIZE_MB=50 \
+  wechatopenai/weknora-ui:latest
+```
+
 > 注意：`docker-compose.yml` 的 app 服务使用 `env_file: [.env]`，`.env` 不存在会导致 compose 解析失败。`make docker-run` / `start_all.sh` 会自动 `cp .env.example .env` 或 `touch .env` 兜底。
 
 ### 版本升级

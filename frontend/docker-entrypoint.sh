@@ -1,5 +1,30 @@
 #!/bin/sh
 
+set -eu
+
+# A single image can run at / or below a reverse-proxy path such as /weknora/.
+# Empty and / disable the prefix. Keep the accepted alphabet deliberately
+# narrow because this value is written into JavaScript, HTML, and nginx config.
+RAW_FRONTEND_BASE_PATH=${FRONTEND_BASE_PATH:-/}
+case "$RAW_FRONTEND_BASE_PATH" in
+  ""|/)
+    RUNTIME_BASE_PATH=/
+    FRONTEND_PATH_PREFIX=""
+    ;;
+  *)
+    case "$RAW_FRONTEND_BASE_PATH" in
+      /*) FRONTEND_PATH_PREFIX=$RAW_FRONTEND_BASE_PATH ;;
+      *) FRONTEND_PATH_PREFIX=/$RAW_FRONTEND_BASE_PATH ;;
+    esac
+    FRONTEND_PATH_PREFIX=$(printf '%s' "$FRONTEND_PATH_PREFIX" | sed 's:/*$::')
+    if ! printf '%s' "$FRONTEND_PATH_PREFIX" | grep -Eq '^(/[A-Za-z0-9_-]+)+$'; then
+      echo "Invalid FRONTEND_BASE_PATH: use path segments containing only letters, digits, _ or -" >&2
+      exit 1
+    fi
+    RUNTIME_BASE_PATH=${FRONTEND_PATH_PREFIX}/
+    ;;
+esac
+
 # Only emit whitelisted locale tags to avoid config.js injection from env values.
 RUNTIME_DEFAULT_LOCALE=""
 case "${DEFAULT_LOCALE:-}" in
@@ -20,9 +45,39 @@ cat > /usr/share/nginx/html/config.js << EOF
 window.__RUNTIME_CONFIG__ = {
   MAX_FILE_SIZE_MB: ${FILE_MB},
   MAX_SKILL_BUNDLE_SIZE_MB: ${SKILL_MB},
-  DEFAULT_LOCALE: "${RUNTIME_DEFAULT_LOCALE}"
+  DEFAULT_LOCALE: "${RUNTIME_DEFAULT_LOCALE}",
+  BASE_PATH: "${RUNTIME_BASE_PATH}"
 };
 EOF
+
+# The image is built with relative asset URLs. An absolute runtime <base>
+# keeps those URLs stable on deep SPA routes such as /weknora/platform/chat.
+for HTML_FILE in /usr/share/nginx/html/index.html /usr/share/nginx/html/embed.html; do
+  if [ ! -f "$HTML_FILE" ]; then
+    continue
+  fi
+  if grep -q 'id="weknora-runtime-base"' "$HTML_FILE"; then
+    sed -i "s|<base id=\"weknora-runtime-base\" href=\"[^\"]*\">|<base id=\"weknora-runtime-base\" href=\"${RUNTIME_BASE_PATH}\">|" "$HTML_FILE"
+  else
+    sed -i "s|<head>|<head>\n    <base id=\"weknora-runtime-base\" href=\"${RUNTIME_BASE_PATH}\">|" "$HTML_FILE"
+  fi
+done
+
+# Prefix requests are internally re-run through the existing root locations.
+# This preserves all current API, files, MCP, embed, WebSocket, and SPA rules.
+: > /etc/nginx/path-prefix.conf
+if [ -n "$FRONTEND_PATH_PREFIX" ]; then
+  cat > /etc/nginx/path-prefix.conf << EOF
+location = ${FRONTEND_PATH_PREFIX} {
+    absolute_redirect off;
+    return 301 ${RUNTIME_BASE_PATH};
+}
+
+location ^~ ${RUNTIME_BASE_PATH} {
+    rewrite ^${FRONTEND_PATH_PREFIX}(/.*)\$ \$1 last;
+}
+EOF
+fi
 
 # 处理 nginx 配置。
 # 两个上限分开注入：全站保持知识库的 MAX_FILE_SIZE，只有技能 zip 上传的两条

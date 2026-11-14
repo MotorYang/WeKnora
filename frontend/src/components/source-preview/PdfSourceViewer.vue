@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import type { SourceLocateRequest } from '@/utils/sourceLocator'
 import { resolvePdfSource, mergeSourceRects, type PdfTarget } from '@/utils/pdfSourceLocate'
 import { findTextRanges } from '@/utils/sourceLocatorDom'
+import { getRuntimeBasePath } from '@/utils/runtimeBasePath'
 import { loadPdfJs, type PdfJs } from './pdfjsLoader'
 
 type PdfDocument = Awaited<ReturnType<PdfJs['getDocument']>['promise']>
@@ -91,7 +92,7 @@ async function openDocument(data: ArrayBuffer) {
   // pdf.js takes ownership of the buffer; keep the caller's copy intact.
   const task = lib.getDocument({
     data: new Uint8Array(data.slice(0)),
-    wasmUrl: `${import.meta.env.BASE_URL}pdfjs/wasm/`,
+    wasmUrl: `${getRuntimeBasePath()}pdfjs/wasm/`,
   })
   loadingTask = task
   const doc = await task.promise

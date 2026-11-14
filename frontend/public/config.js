@@ -2,6 +2,8 @@
 window.__RUNTIME_CONFIG__ = {
   MAX_FILE_SIZE_MB: 50,
   MAX_SKILL_BUNDLE_SIZE_MB: 256,
+  // Empty means use Vite's build/dev base. Docker writes / or /prefix/ here.
+  BASE_PATH: '',
   // Optional: serve embed on a dedicated origin, e.g. 'https://embed.example.com'
   EMBED_BASE_URL: '',
   // Optional: default UI locale for first-time visitors (zh-CN | zh-TW | en-US | ru-RU | ko-KR | ja-JP)

@@ -1,6 +1,7 @@
 import { onUnmounted, ref, type Ref } from 'vue'
 import type RFB from '@novnc/novnc'
 import { post } from '@/utils/request'
+import { getRuntimeBasePrefix } from '@/utils/runtimeBasePath'
 
 export type SandboxDesktopStatus =
   | 'idle'
@@ -101,7 +102,7 @@ function attachDesktopClipboard(client: RFB, element: HTMLElement): () => void {
 }
 
 function resolveWsBase(): string {
-  const base = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '')
+  const base = getRuntimeBasePrefix()
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
   return `${protocol}://${window.location.host}${base}`
 }

@@ -1,6 +1,7 @@
 import { onUnmounted, ref, type Ref } from 'vue'
 import { post } from '@/utils/request'
 import { readStoredPtyId, writeStoredPtyId } from '@/utils/sandboxPtyId'
+import { getRuntimeBasePrefix } from '@/utils/runtimeBasePath'
 
 export type SandboxTerminalStatus =
   /** 查询到会话沙箱已暂停；唤醒需要用户确认。 */
@@ -39,7 +40,7 @@ const PENDING_OUTPUT_MAX_BYTES = 1024 * 1024
 const INPUT_FRAME_MAX_BYTES = 2048
 
 function resolveWsBase(): string {
-  const base = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '')
+  const base = getRuntimeBasePrefix()
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
   return `${protocol}://${window.location.host}${base}`
 }

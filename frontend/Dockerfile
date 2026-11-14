@@ -14,6 +14,9 @@
 # Optional npm mirror (e.g. corporate registry):
 #   --build-arg NPM_REGISTRY=https://registry.npmmirror.com
 #
+# The resulting image selects its public path at runtime:
+#   docker run -e FRONTEND_BASE_PATH=/weknora ...
+#
 # Docker Desktop with a small VM:
 #   --build-arg NODE_MAX_OLD_SPACE_SIZE=2048
 
@@ -46,7 +49,9 @@ COPY . .
 # After npm ci so a new commit hash does not bust the dependency layer.
 ARG VITE_FRONTEND_COMMIT=unknown
 ENV VITE_FRONTEND_COMMIT=${VITE_FRONTEND_COMMIT}
-ARG VITE_BASE_PATH=/
+# Relative asset URLs let the same image be mounted below a runtime-selected
+# path prefix. docker-entrypoint.sh injects the matching HTML <base> element.
+ARG VITE_BASE_PATH=./
 ENV VITE_BASE_PATH=${VITE_BASE_PATH}
 RUN npm run build
 
