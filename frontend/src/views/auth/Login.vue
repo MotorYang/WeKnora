@@ -97,7 +97,7 @@
 
     <!-- Logo - Top Left -->
     <a href="https://github.com/Tencent/WeKnora" target="_blank" class="header-logo" :title="$t('common.github')">
-      <img src="@/assets/img/weknora.png" alt="WeKnora" class="logo-image" />
+      <span class="logo-text">刑侦知识库</span>
     </a>
 
     <!-- Header Links - Top Right -->
@@ -1194,10 +1194,16 @@ onMounted(async () => {
   left: 50px;
   z-index: 100;
   cursor: pointer;
+  color: var(--td-text-color-primary);
+  text-decoration: none;
 
-  .logo-image {
-    width: 120px;
-    height: auto;
+  .logo-text {
+    display: inline-block;
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
   }
 }
 
@@ -1647,8 +1653,8 @@ onMounted(async () => {
     top: 26px;
     left: 40px;
 
-    .logo-image {
-      width: 100px;
+    .logo-text {
+      font-size: 24px;
     }
   }
 
@@ -1697,8 +1703,8 @@ onMounted(async () => {
     top: 22px;
     left: 30px;
 
-    .logo-image {
-      width: 80px;
+    .logo-text {
+      font-size: 21px;
     }
   }
 
@@ -1758,8 +1764,8 @@ onMounted(async () => {
     top: 18px;
     left: 20px;
 
-    .logo-image {
-      width: 70px;
+    .logo-text {
+      font-size: 19px;
     }
   }
 
@@ -1831,8 +1837,8 @@ html[theme-mode="dark"] {
     stroke: rgba(255, 255, 255, 0.25);
   }
 
-  .header-logo .logo-image {
-    filter: invert(1) hue-rotate(180deg) brightness(1.1);
+  .header-logo {
+    color: var(--td-text-color-primary);
   }
 
   .header-link {
