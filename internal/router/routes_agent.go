@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strings"
@@ -8,9 +9,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/embedpolicy"
 	"github.com/Tencent/WeKnora/internal/handler"
 	"github.com/Tencent/WeKnora/internal/middleware"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
@@ -234,7 +237,9 @@ func RegisterOrganizationRoutes(r *gin.RouterGroup, orgHandler *handler.Organiza
 func RegisterEmbedPublicRoutes(
 	r *gin.Engine,
 	embedHandler *handler.EmbedChannelHandler,
+	knowledgeHandler *handler.KnowledgeHandler,
 	embedService interfaces.EmbedChannelService,
+	kbService interfaces.KnowledgeBaseService,
 	tenantService interfaces.TenantService,
 	redisClient *redis.Client,
 	fileService interfaces.FileService,
@@ -268,10 +273,164 @@ func RegisterEmbedPublicRoutes(
 		embed.GET("/sessions/:session_id/mcp-services/:id/oauth/status", embedHandler.EmbedMCPOAuthStatus)
 		embed.POST("/sessions/:session_id/tool-approvals/:pending_id", embedHandler.EmbedResolveToolApproval)
 		embed.POST("/sessions/:session_id/prompts/:prompt_id", embedHandler.EmbedResolveAgentPrompt)
+		if knowledgeHandler != nil && kbService != nil {
+			embed.GET("/knowledge-bases", embedKnowledgeBaseList(embedService, kbService))
+			embed.GET(
+				"/knowledge-bases/:id/knowledge",
+				embedKnowledgeUploadScope(embedService, kbService, "id"),
+				knowledgeHandler.ListKnowledge,
+			)
+			embed.POST(
+				"/knowledge-bases/:id/knowledge/file",
+				embedKnowledgeUploadScope(embedService, kbService, "id"),
+				knowledgeHandler.CreateKnowledgeFromFile,
+			)
+			embed.GET(
+				"/knowledge-bases/:id/images",
+				embedKnowledgeUploadScope(embedService, kbService, "id"),
+				knowledgeHandler.ListImages,
+			)
+			embed.GET(
+				"/knowledge-bases/:id/gallery-config",
+				embedKnowledgeUploadScope(embedService, kbService, "id"),
+				knowledgeHandler.GetGalleryConfig,
+			)
+			// Gin requires one wildcard name for a given tree segment, so the KB
+			// stays :id across this subtree. After the KB grant is bound, the next
+			// middleware promotes :knowledge_id to :id for KnowledgeHandler.
+			document := embed.Group(
+				"/knowledge-bases/:id/documents/:knowledge_id",
+				embedKnowledgeUploadScope(embedService, kbService, "id"),
+				embedKnowledgeDocumentParam("knowledge_id"),
+			)
+			document.PUT("", knowledgeHandler.UpdateKnowledge)
+			document.DELETE("", knowledgeHandler.DeleteKnowledge)
+			document.GET("/preview", knowledgeHandler.PreviewKnowledgeFile)
+			document.GET("/download", knowledgeHandler.DownloadKnowledgeFile)
+		}
 		// Serve images embedded in bot replies (e.g. chart exports). EmbedAuth
 		// injects the channel's tenant, and the handler enforces that the
 		// requested path belongs to that tenant.
 		embed.GET("/files", newFileServeHandler(fileService, storageResolver, resourceCatalogs...))
+	}
+}
+
+type embedPublicConfigResolver interface {
+	PublicConfig(context.Context, *types.EmbedChannel) types.EmbedChannelPublicConfig
+}
+
+type embedKnowledgeBaseLookup interface {
+	GetKnowledgeBaseByIDOnly(context.Context, string) (*types.KnowledgeBase, error)
+	GetKnowledgeBasesByIDsOnly(context.Context, []string) ([]*types.KnowledgeBase, error)
+}
+
+func embedKnowledgeBaseIDs(
+	ctx *gin.Context,
+	embedService embedPublicConfigResolver,
+) (*types.EmbedChannel, map[string]struct{}, bool) {
+	ch, ok := middleware.EmbedChannelFromContext(ctx.Request.Context())
+	if !ok || ch == nil || !ch.AllowFileUpload {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "knowledge upload is not enabled for this embed channel"})
+		ctx.Abort()
+		return nil, nil, false
+	}
+	ids := embedService.PublicConfig(ctx.Request.Context(), ch).KnowledgeBaseIDs
+	allowed := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if id = strings.TrimSpace(id); id != "" {
+			allowed[id] = struct{}{}
+		}
+	}
+	if len(allowed) == 0 {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "embed channel has no explicitly selected knowledge bases"})
+		ctx.Abort()
+		return nil, nil, false
+	}
+	return ch, allowed, true
+}
+
+func embedKnowledgeBaseList(
+	embedService embedPublicConfigResolver,
+	kbService embedKnowledgeBaseLookup,
+) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ch, allowed, ok := embedKnowledgeBaseIDs(c, embedService)
+		if !ok {
+			return
+		}
+		ids := make([]string, 0, len(allowed))
+		for id := range allowed {
+			ids = append(ids, id)
+		}
+		rows, err := kbService.GetKnowledgeBasesByIDsOnly(c.Request.Context(), ids)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load knowledge bases"})
+			return
+		}
+		data := make([]gin.H, 0, len(rows))
+		for _, kb := range rows {
+			if kb == nil || kb.TenantID != ch.TenantID {
+				continue
+			}
+			if _, exists := allowed[kb.ID]; !exists {
+				continue
+			}
+			data = append(data, gin.H{"id": kb.ID, "name": kb.Name, "type": kb.Type})
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "data": data})
+	}
+}
+
+// embedKnowledgeUploadScope grants exactly one request-local Editor grant for
+// an explicitly selected KB. It never creates a user/admin login session and
+// cannot authorize settings, deletion, or any route outside this handler chain.
+func embedKnowledgeUploadScope(
+	embedService embedPublicConfigResolver,
+	kbService embedKnowledgeBaseLookup,
+	kbParam string,
+) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ch, allowed, ok := embedKnowledgeBaseIDs(c, embedService)
+		if !ok {
+			return
+		}
+		kbID := strings.TrimSpace(c.Param(kbParam))
+		if _, exists := allowed[kbID]; !exists {
+			c.JSON(http.StatusForbidden, gin.H{"error": "knowledge base is outside the embed channel scope"})
+			c.Abort()
+			return
+		}
+		kb, err := kbService.GetKnowledgeBaseByIDOnly(c.Request.Context(), kbID)
+		if err != nil || kb == nil || kb.TenantID != ch.TenantID {
+			c.JSON(http.StatusNotFound, gin.H{"error": "knowledge base not found"})
+			c.Abort()
+			return
+		}
+		grant := (&access.KBAccess{
+			Caller:            types.CallerFromContext(c.Request.Context()),
+			KnowledgeBase:     kb,
+			EffectiveTenantID: ch.TenantID,
+			Permission:        types.OrgRoleEditor,
+		})
+		// Handlers can consume KB grants from either Gin (for nested resource
+		// checks) or request context (for repository execution). Populate both,
+		// matching the normal authenticated KB guard.
+		c.Set(middleware.KBAccessContextKey, grant)
+		c.Request = c.Request.WithContext(grant.Context(c.Request.Context()))
+		c.Next()
+	}
+}
+
+func embedKnowledgeDocumentParam(param string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		knowledgeID := strings.TrimSpace(c.Param(param))
+		for i := range c.Params {
+			if c.Params[i].Key == "id" {
+				c.Params[i].Value = knowledgeID
+				break
+			}
+		}
+		c.Next()
 	}
 }
 

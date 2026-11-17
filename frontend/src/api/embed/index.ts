@@ -1,4 +1,4 @@
-import { get, post, put, del } from '@/utils/request'
+import { get, post, postUpload, put, del } from '@/utils/request'
 import { resolveEmbedBaseUrl } from '@/utils/embedBaseUrl'
 
 export interface EmbedChannel {
@@ -286,6 +286,156 @@ export async function getEmbedConfig(channelId: string, token: string) {
     `/api/v1/embed/${channelId}/config`,
     { headers: { Authorization: `Embed ${token}` } },
   )
+}
+
+export interface EmbedKnowledgeBaseOption {
+  id: string
+  name: string
+  type?: string
+}
+
+export interface EmbedKnowledgeDocument {
+  id: string
+  title?: string
+  file_name?: string
+  type?: string
+  file_type?: string
+  file_size?: number
+  description?: string
+  parse_status?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface EmbedKnowledgePage {
+  success: boolean
+  data: EmbedKnowledgeDocument[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface EmbedGalleryImage {
+  id: string
+  knowledge_id: string
+  source_name?: string
+  url: string
+  original_url?: string
+  caption?: string
+  ocr_text?: string
+  attrs?: Record<string, unknown>
+  created_at?: string
+}
+
+export async function listEmbedKnowledgeBases(channelId: string, token: string) {
+  return get<{ success: boolean; data: EmbedKnowledgeBaseOption[] }>(
+    `/api/v1/embed/${encodeURIComponent(channelId)}/knowledge-bases`,
+    { headers: { Authorization: `Embed ${token}` } },
+  )
+}
+
+export async function uploadEmbedKnowledgeFile(
+  channelId: string,
+  token: string,
+  kbId: string,
+  file: File,
+  onProgress?: (progressEvent: { loaded?: number; total?: number }) => void,
+) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return postUpload(
+    `/api/v1/embed/${encodeURIComponent(channelId)}/knowledge-bases/${encodeURIComponent(kbId)}/knowledge/file`,
+    formData,
+    onProgress,
+    { headers: { Authorization: `Embed ${token}` } },
+  )
+}
+
+function embedKnowledgeHeaders(token: string) {
+  return { Authorization: `Embed ${token}` }
+}
+
+export async function listEmbedKnowledgeDocuments(
+  channelId: string,
+  token: string,
+  kbId: string,
+  params: { page?: number; page_size?: number; keyword?: string } = {},
+) {
+  const query = new URLSearchParams()
+  query.set('page', String(params.page || 1))
+  query.set('page_size', String(params.page_size || 20))
+  if (params.keyword?.trim()) query.set('keyword', params.keyword.trim())
+  return get<EmbedKnowledgePage>(
+    `/api/v1/embed/${encodeURIComponent(channelId)}/knowledge-bases/${encodeURIComponent(kbId)}/knowledge?${query}`,
+    { headers: embedKnowledgeHeaders(token) },
+  )
+}
+
+export async function updateEmbedKnowledgeDocument(
+  channelId: string,
+  token: string,
+  kbId: string,
+  knowledgeId: string,
+  data: { title?: string; description?: string },
+) {
+  return put(
+    `/api/v1/embed/${encodeURIComponent(channelId)}/knowledge-bases/${encodeURIComponent(kbId)}/documents/${encodeURIComponent(knowledgeId)}`,
+    data,
+    { headers: embedKnowledgeHeaders(token) },
+  )
+}
+
+export async function deleteEmbedKnowledgeDocument(
+  channelId: string,
+  token: string,
+  kbId: string,
+  knowledgeId: string,
+) {
+  return del(
+    `/api/v1/embed/${encodeURIComponent(channelId)}/knowledge-bases/${encodeURIComponent(kbId)}/documents/${encodeURIComponent(knowledgeId)}`,
+    undefined,
+    { headers: embedKnowledgeHeaders(token) },
+  )
+}
+
+export async function listEmbedGalleryImages(
+  channelId: string,
+  token: string,
+  kbId: string,
+  params: { page?: number; page_size?: number; keyword?: string } = {},
+) {
+  const query = new URLSearchParams()
+  query.set('page', String(params.page || 1))
+  query.set('page_size', String(params.page_size || 24))
+  if (params.keyword?.trim()) query.set('keyword', params.keyword.trim())
+  return get<{ success: boolean; data: EmbedGalleryImage[]; total: number; page: number; page_size: number }>(
+    `/api/v1/embed/${encodeURIComponent(channelId)}/knowledge-bases/${encodeURIComponent(kbId)}/images?${query}`,
+    { headers: embedKnowledgeHeaders(token) },
+  )
+}
+
+export async function getEmbedKnowledgeBlob(
+  channelId: string,
+  token: string,
+  kbId: string,
+  knowledgeId: string,
+  mode: 'preview' | 'download',
+): Promise<Blob> {
+  return get<Blob>(
+    `/api/v1/embed/${encodeURIComponent(channelId)}/knowledge-bases/${encodeURIComponent(kbId)}/documents/${encodeURIComponent(knowledgeId)}/${mode}`,
+    { headers: embedKnowledgeHeaders(token), responseType: 'blob', timeout: 300_000 },
+  ) as unknown as Promise<Blob>
+}
+
+export async function getEmbedImageBlob(
+  channelId: string,
+  token: string,
+  filePath: string,
+): Promise<Blob> {
+  return get<Blob>(
+    `/api/v1/embed/${encodeURIComponent(channelId)}/files?file_path=${encodeURIComponent(filePath)}`,
+    { headers: embedKnowledgeHeaders(token), responseType: 'blob' },
+  ) as unknown as Promise<Blob>
 }
 
 export async function createEmbedSession(channelId: string, token: string) {

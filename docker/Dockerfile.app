@@ -76,11 +76,13 @@ ENV BUILD_TIME=${BUILD_TIME_ARG}
 ARG WITH_ANYDOC=1
 ENV RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo
 ENV PATH=/usr/local/cargo/bin:$PATH
+# BrowserSkill already installs the pinned stable Rust toolchain above. Reuse
+# it here instead of downloading the same toolchain a second time.
+COPY --from=browserskill /usr/local/rustup /usr/local/rustup
+COPY --from=browserskill /usr/local/cargo /usr/local/cargo
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     if [ "$WITH_ANYDOC" = "1" ]; then \
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-            | sh -s -- -y --profile minimal --default-toolchain stable && \
         ./scripts/build-anydoc-lib.sh; \
     fi
 

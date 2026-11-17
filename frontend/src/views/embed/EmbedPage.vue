@@ -15,6 +15,20 @@
           <p v-if="headerSubtitle" class="embed-header__subtitle">{{ headerSubtitle }}</p>
         </div>
         <t-button
+          tag="a"
+          :href="knowledgeBaseHref"
+          target="_blank"
+          rel="noopener noreferrer"
+          variant="text"
+          shape="square"
+          size="small"
+          class="embed-header__action"
+          :title="$t('embedPublish.knowledgeBase')"
+          :aria-label="$t('embedPublish.knowledgeBase')"
+        >
+          <template #icon><t-icon name="folder" /></template>
+        </t-button>
+        <t-button
           variant="text"
           shape="square"
           size="small"
@@ -109,6 +123,7 @@ import { useI18n } from 'vue-i18n'
 import EmbedChatView from '@/views/embed/EmbedChatView.vue'
 import { useEmbedBridge } from '@/composables/useEmbedBridge'
 import { setDefaultProtectedFileAccess } from '@/utils/protectedFileAccess'
+import { getRuntimeBasePath } from '@/utils/runtimeBasePath'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -137,6 +152,11 @@ const {
   rememberCurrentSession,
   setSessionHasMessages,
 } = useEmbedBridge(channelId)
+
+const knowledgeBaseHref = computed(() => {
+  const path = `${getRuntimeBasePath()}embed/${encodeURIComponent(channelId.value)}/knowledge`
+  return token.value ? `${path}#token=${encodeURIComponent(token.value)}` : path
+})
 
 // An embed visitor has no Bearer/tenant credentials, so every protected file in
 // this document must go through the channel-scoped proxy. Registering the plane

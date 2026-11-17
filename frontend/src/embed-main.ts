@@ -7,6 +7,7 @@ import '@/assets/theme/theme.css'
 import { installTDesignIconOfflineGuard } from '@/utils/tdesign-icon-offline'
 import i18n from './i18n/embed'
 import EmbedPage from '@/views/embed/EmbedPage.vue'
+import EmbedKnowledgeUploadPage from '@/views/embed/EmbedKnowledgeUploadPage.vue'
 import ProtectedResourcePreview from '@/components/ProtectedResourcePreview.vue'
 import { getRuntimeBasePath } from '@/utils/runtimeBasePath'
 
@@ -15,6 +16,11 @@ installTDesignIconOfflineGuard()
 const router = createRouter({
   history: createWebHistory(getRuntimeBasePath()),
   routes: [
+    {
+      path: '/embed/:channelId/knowledge',
+      name: 'embed-knowledge-upload',
+      component: EmbedKnowledgeUploadPage,
+    },
     {
       path: '/embed/:channelId',
       name: 'embed',

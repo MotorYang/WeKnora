@@ -131,11 +131,25 @@ prepare_patched_anydoc
 # --locked: build exactly the dependency versions in the committed Cargo.lock.
 # That lockfile is what pins the patched pdf-inspector/lopdf, so a silent
 # resolver drift must fail the build rather than ship an unaudited tree.
-cargo build --release --locked --manifest-path "$crate_dir/Cargo.toml" --target "$target"
+# Go 1.26 rejects cgo linker archives containing LLVM IR sections. Rust can
+# retain .llvmbc for future LTO even when the release profile has LTO disabled,
+# so emit native object code only for the archive consumed by cgo.
+RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C embed-bitcode=no" \
+  cargo build --release --locked --manifest-path "$crate_dir/Cargo.toml" --target "$target"
 
 dest="$crate_dir/lib/$lib_dir"
 mkdir -p "$dest"
 cp "$crate_dir/target/$target/release/$lib_name" "$dest/$lib_name"
+
+# Rust's precompiled standard-library objects can still carry LLVM bitcode
+# even when this crate disables embedding. Go 1.26 rejects such cgo linker
+# inputs, so strip only the LTO metadata sections from Linux archives while
+# retaining their native object code.
+case "$target" in
+  *-unknown-linux-*)
+    objcopy --remove-section=.llvmbc --remove-section=.llvmcmd "$dest/$lib_name"
+    ;;
+esac
 
 echo "Wrote $dest/$lib_name"
 echo "Build WeKnora with the archive: go build -tags anydoc ./cmd/server"

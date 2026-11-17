@@ -183,7 +183,9 @@ func NewRouter(params RouterParams) *gin.Engine {
 	RegisterEmbedPublicRoutes(
 		r,
 		params.EmbedChannelHandler,
+		params.KnowledgeHandler,
 		params.EmbedChannelService,
+		params.KBService,
 		params.TenantService,
 		params.RedisClient,
 		params.FileService,

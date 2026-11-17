@@ -30,19 +30,32 @@ function resolveFrontendCommit(): string {
 
 const FRONTEND_COMMIT = resolveFrontendCommit()
 
+/**
+ * Resolve an embed channel route to the dedicated HTML entry in dev.
+ *
+ * Vite invokes configureServer middleware before it strips `base`, so a dev
+ * deployment at /weknora/ receives /weknora/embed/:channelId here.
+ */
+export function rewriteEmbedDevUrl(rawUrl: string, base: string): string | undefined {
+  const qIdx = rawUrl.indexOf('?')
+  const path = qIdx >= 0 ? rawUrl.slice(0, qIdx) : rawUrl
+  const qs = qIdx >= 0 ? rawUrl.slice(qIdx) : ''
+  const basePrefix = base === '/' || base === './' ? '' : base.replace(/\/$/, '')
+  const embedPrefix = `${basePrefix}/embed/`
+
+  if (path.startsWith(embedPrefix) && !path.slice(embedPrefix.length).includes('.')) {
+    return `${basePrefix}/embed.html${qs}`
+  }
+}
+
 /** Dev parity with nginx: serve embed.html for /embed/:channelId (not the main SPA). */
 function embedHtmlDevFallback(): Plugin {
   return {
     name: 'embed-html-dev-fallback',
     configureServer(server) {
       server.middlewares.use((req, _res, next) => {
-        const raw = req.url ?? ''
-        const qIdx = raw.indexOf('?')
-        const path = qIdx >= 0 ? raw.slice(0, qIdx) : raw
-        const qs = qIdx >= 0 ? raw.slice(qIdx) : ''
-        if (path.startsWith('/embed/') && path !== '/embed.html' && !path.includes('.')) {
-          req.url = `/embed.html${qs}`
-        }
+        const rewritten = rewriteEmbedDevUrl(req.url ?? '', server.config.base)
+        if (rewritten) req.url = rewritten
         next()
       })
     },
@@ -52,6 +65,29 @@ const DEV_PROXY_TARGET =
   process.env.VITE_DEV_PROXY_TARGET ||
   process.env.FRONTEND_BACKEND_URL ||
   'http://localhost:8080'
+const DEV_BASE_PREFIX = (() => {
+  const raw = (process.env.VITE_BASE_PATH || '/').trim()
+  if (!raw || raw === '/' || raw === './') return ''
+  return `/${raw.replace(/^\/+|\/+$/g, '')}`
+})()
+
+function basePrefixedProxy() {
+  if (!DEV_BASE_PREFIX) return {}
+  const stripBase = (path: string) => path.slice(DEV_BASE_PREFIX.length) || '/'
+  return {
+    [`${DEV_BASE_PREFIX}/api`]: {
+      target: DEV_PROXY_TARGET, changeOrigin: true, secure: false, ws: true,
+      timeout: 180_000, proxyTimeout: 180_000, rewrite: stripBase,
+    },
+    [`${DEV_BASE_PREFIX}/files`]: {
+      target: DEV_PROXY_TARGET, changeOrigin: true, secure: false, rewrite: stripBase,
+    },
+    [`${DEV_BASE_PREFIX}/mcp/`]: {
+      target: DEV_PROXY_TARGET, changeOrigin: true, secure: false,
+      timeout: 3_600_000, proxyTimeout: 3_600_000, rewrite: stripBase,
+    },
+  }
+}
 
 function resolveVueOfficePptxEntry(): string {
   try {
@@ -156,6 +192,7 @@ export default defineConfig({
     host: true,
     // 代理配置，用于开发环境
     proxy: {
+      ...basePrefixedProxy(),
       '/mcp/': {
         target: DEV_PROXY_TARGET,
         changeOrigin: true,
@@ -190,6 +227,7 @@ export default defineConfig({
     port: 4173,
     host: true,
     proxy: {
+      ...basePrefixedProxy(),
       '/mcp/': {
         target: DEV_PROXY_TARGET,
         changeOrigin: true,
